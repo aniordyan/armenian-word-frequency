@@ -1,34 +1,48 @@
 package am.aua.word_frequency.service;
+import am.aua.word_frequency.util.ArmenianStemmer;
 import org.springframework.stereotype.Service;
 
-import java.util.Map;
+import java.util.*;
 import java.util.stream.Collectors;
-import java.util.LinkedHashMap;
 
 @Service
 public class FrequencyService {
 
     private final TextPreprocessor preprocessor;
-    private final WordFrequencyAnalyzer analyzer;
     private final StopWordsRemover remover;
+    private final ArmenianStemmer stemmer;
 
-    // Constructor - Spring will inject the dependencies
     public FrequencyService(TextPreprocessor preprocessor,
-                            WordFrequencyAnalyzer analyzer,
                             StopWordsRemover remover) {
         this.preprocessor = preprocessor;
-        this.analyzer = analyzer;
         this.remover = remover;
+        this.stemmer = new ArmenianStemmer();
     }
 
     public Map<String, Integer> analyze(String text, int wordCount) {
+        // 1. Preprocess
         String cleaned = preprocessor.preprocess(text);
-        Map<String, Integer> freqMap = analyzer.analyze(cleaned);
-        Map<String, Integer> filtered = remover.removeStopWords(freqMap);
 
-        return filtered.entrySet().stream()
+        // 2. Split and filter stop words first
+        List<String> words = Arrays.stream(cleaned.split("\\s+"))
+                .filter(word -> !word.isEmpty())
+                .filter(word -> !remover.isStopWord(word)) // Immediate stop word removal
+                .collect(Collectors.toList());
+
+        // 3. Stem remaining words and count
+        Map<String, Integer> freqMap = new HashMap<>();
+        for (String word : words) {
+            String stemmed = stemmer.stem(word);
+            stemmed = stemmed.replaceAll("[^\\p{IsArmenian}]", "");
+            if (!stemmed.isEmpty()) {
+                freqMap.put(stemmed, freqMap.getOrDefault(stemmed, 0) + 1);
+            }
+        }
+
+        // 4. Sort and limit results
+        return freqMap.entrySet().stream()
                 .sorted(Map.Entry.<String, Integer>comparingByValue().reversed())
-                .limit(wordCount)  // Use the parameter instead of hardcoded 10
+                .limit(wordCount)
                 .collect(Collectors.toMap(
                         Map.Entry::getKey,
                         Map.Entry::getValue,
